@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kubernetes Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mantine/core@7.5.1/dist/index.css" rel="stylesheet">
+    <style>
+        .resource-card {
+            transition: all 0.3s ease;
+        }
+        .resource-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-gray-900">Kubernetes Dashboard</h1>
+                    <div class="flex space-x-4">
+                        <input type="file" id="kubeconfig" class="hidden" accept=".yaml,.yml">
+                        <label for="kubeconfig" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md cursor-pointer">
+                            Upload Kubeconfig
+                        </label>
+                        <button id="showPasteModal" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md">
+                            Paste Kubeconfig
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Paste Kubeconfig Modal -->
+        <div id="pasteModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+            <div class="bg-white rounded-lg p-6 w-full max-w-2xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Paste Kubeconfig Content</h3>
+                    <button id="closePasteModal" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <textarea id="kubeConfigContent" rows="10" 
+                    class="w-full p-2 border rounded-md mb-4 font-mono text-sm"
+                    placeholder="Paste your kubeconfig content here..."></textarea>
+                <div class="flex justify-end">
+                    <button id="submitKubeconfig" 
+                        class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md">
+                        Submit
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <!-- Resource Overview -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="resource-card bg-white p-6 rounded-lg shadow-sm">
+                    <h3 class="text-lg font-semibold mb-2">Pods</h3>
+                    <p id="pods-count" class="text-3xl font-bold text-blue-500">0</p>
+                </div>
+                <div class="resource-card bg-white p-6 rounded-lg shadow-sm">
+                    <h3 class="text-lg font-semibold mb-2">Services</h3>
+                    <p id="services-count" class="text-3xl font-bold text-green-500">0</p>
+                </div>
+                <div class="resource-card bg-white p-6 rounded-lg shadow-sm">
+                    <h3 class="text-lg font-semibold mb-2">Deployments</h3>
+                    <p id="deployments-count" class="text-3xl font-bold text-purple-500">0</p>
+                </div>
+                <div class="resource-card bg-white p-6 rounded-lg shadow-sm">
+                    <h3 class="text-lg font-semibold mb-2">Nodes</h3>
+                    <p id="nodes-count" class="text-3xl font-bold text-orange-500">0</p>
+                </div>
+            </div>
+
+            <!-- Resource Details -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Pods -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-xl font-semibold mb-4">Pods</h3>
+                    <div id="pods-list" class="space-y-3"></div>
+                </div>
+
+                <!-- Services -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-xl font-semibold mb-4">Services</h3>
+                    <div id="services-list" class="space-y-3"></div>
+                </div>
+
+                <!-- Deployments -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-xl font-semibold mb-4">Deployments</h3>
+                    <div id="deployments-list" class="space-y-3"></div>
+                </div>
+
+                <!-- Nodes -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-xl font-semibold mb-4">Nodes</h3>
+                    <div id="nodes-list" class="space-y-3"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let ws = null;
+        let clientId = null;
+
+        // Modal handling
+        const pasteModal = document.getElementById('pasteModal');
+        const showPasteModal = document.getElementById('showPasteModal');
+        const closePasteModal = document.getElementById('closePasteModal');
+        const submitKubeconfig = document.getElementById('submitKubeconfig');
+        const kubeConfigContent = document.getElementById('kubeConfigContent');
+
+        showPasteModal.addEventListener('click', () => {
+            pasteModal.classList.remove('hidden');
+        });
+
+        closePasteModal.addEventListener('click', () => {
+            pasteModal.classList.add('hidden');
+            kubeConfigContent.value = '';
+        });
+
+        submitKubeconfig.addEventListener('click', async () => {
+            const content = kubeConfigContent.value;
+            if (!content) {
+                alert('Please paste your kubeconfig content');
+                return;
+            }
+
+            try {
+                const response = await fetch('/paste-kubeconfig', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ content: content })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    clientId = data.client_id;
+                    pasteModal.classList.add('hidden');
+                    kubeConfigContent.value = '';
+                    connectWebSocket();
+                } else {
+                    const errorData = await response.json();
+                    alert('Failed to submit kubeconfig: ' + errorData.detail);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error submitting kubeconfig');
+            }
+        });
+
+        document.getElementById('kubeconfig').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload-kubeconfig', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    clientId = data.client_id;
+                    connectWebSocket();
+                } else {
+                    const errorData = await response.json();
+                    alert('Failed to upload kubeconfig: ' + errorData.detail);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error uploading kubeconfig');
+            }
+        });
+
+        function connectWebSocket() {
+            if (ws) ws.close();
+            
+            if (!clientId) {
+                console.error('No client ID available');
+                return;
+            }
+            
+            ws = new WebSocket(`ws://${window.location.host}/ws/${clientId}`);
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.error) {
+                    console.error('Server error:', data.error);
+                } else {
+                    updateDashboard(data);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                setTimeout(connectWebSocket, 5000);
+            };
+        }
+
+        function updateDashboard(data) {
+            // Update counts
+            document.getElementById('pods-count').textContent = data.pods.length;
+            document.getElementById('services-count').textContent = data.services.length;
+            document.getElementById('deployments-count').textContent = data.deployments.length;
+            document.getElementById('nodes-count').textContent = data.nodes?.length || 0;
+
+            // Update lists
+            updateResourceList('pods-list', data.pods, pod => `
+                <div class="border rounded p-3 hover:bg-gray-50">
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium">${pod.name}</span>
+                        <span class="px-2 py-1 rounded text-sm ${getStatusColor(pod.status)}">${pod.status}</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">Namespace: ${pod.namespace}</div>
+                </div>
+            `);
+
+            updateResourceList('services-list', data.services, service => `
+                <div class="border rounded p-3 hover:bg-gray-50">
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium">${service.name}</span>
+                        <span class="text-sm text-gray-500">${service.type}</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">Namespace: ${service.namespace}</div>
+                </div>
+            `);
+
+            updateResourceList('deployments-list', data.deployments, deployment => `
+                <div class="border rounded p-3 hover:bg-gray-50">
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium">${deployment.name}</span>
+                        <span class="text-sm">Replicas: ${deployment.replicas}</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-1">Namespace: ${deployment.namespace}</div>
+                </div>
+            `);
+        }
+
+        function updateResourceList(elementId, items, templateFn) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = items.map(templateFn).join('');
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'Running': 'bg-green-100 text-green-800',
+                'Pending': 'bg-yellow-100 text-yellow-800',
+                'Failed': 'bg-red-100 text-red-800',
+                'Unknown': 'bg-gray-100 text-gray-800'
+            };
+            return colors[status] || colors['Unknown'];
+        }
+    </script>
+</body>
+</html> 
